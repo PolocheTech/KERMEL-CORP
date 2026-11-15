@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 
 OrderStatus = Literal[
@@ -27,7 +27,7 @@ class ProductCreate(BaseModel):
     name: str = Field(min_length=1, max_length=120)
     brand: str = Field(min_length=1, max_length=80)
     category_id: int = Field(gt=0)
-    price: int = Field(ge=0)
+    price: int = Field(gt=0)
     stock: int = Field(ge=0)
     socket: str | None = Field(default=None, max_length=40)
     icon: str = Field(default="📦", max_length=20)
@@ -59,4 +59,13 @@ class CartItemChange(BaseModel):
 
 class OrderStatusChange(BaseModel):
     estado: OrderStatus
+
+
+PaymentMethod = Literal["efectivo_contra_entrega"]
+
+
+class CreateOrderRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    payment_method: PaymentMethod
 

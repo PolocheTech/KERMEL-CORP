@@ -340,6 +340,15 @@
   color: var(--success);
 }
 
+.store-message.warning {
+  color: #f0bf61;
+}
+
+.payment-note {
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
 .notification-list {
   margin: 10px 0 0;
   padding: 0;
@@ -348,6 +357,34 @@
 
 .empty-state {
   padding: 18px 0;
+  color: var(--muted);
+}
+
+.pagination-controls {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 14px;
+  margin: 22px 0;
+  color: var(--muted);
+}
+
+.product-quantity {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin: 8px 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+}
+
+.product-quantity input {
+  width: 82px;
+}
+
+.order-details {
+  flex-basis: 100%;
+  padding: 10px 0;
   color: var(--muted);
 }
 

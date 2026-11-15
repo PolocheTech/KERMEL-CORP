@@ -17,13 +17,24 @@
     <main class="contenido">
       <header class="barra">
         <h1>Administración <span id="estadoConexion" class="vivo"><span class="punto"></span><span id="textoConexion">Conectando…</span></span></h1>
-        <div class="controles"><button id="refreshButton" type="button">Actualizar</button><button id="btnCerrarSesion" type="button">Cerrar sesión</button></div>
+        <div class="controles"><button id="refreshButton" type="button">Actualizar</button><button id="togglePolling" type="button" aria-pressed="false">Pausar actualizaciones</button><button id="toggleTheme" type="button" aria-pressed="false">Activar modo oscuro</button><button id="btnCerrarSesion" type="button">Cerrar sesión</button></div>
       </header>
 
       <section id="resumen" class="tarjetas" aria-label="Resumen de inventario"></section>
       <section class="panel">
         <h2>Unidades disponibles por categoría</h2>
         <div id="categorySummary" class="category-summary"></div>
+      </section>
+      <section class="dashboard-charts" aria-label="Gráficos del inventario">
+        <article class="panel">
+          <h2>Stock por categoría</h2>
+          <div id="stockChart" class="bar-chart" role="img" aria-label="Gráfico de barras de unidades disponibles por categoría"></div>
+        </article>
+        <article class="panel">
+          <h2>Productos por categoría</h2>
+          <div id="categoryChart" class="donut-chart" role="img" aria-label="Gráfico de dona de productos por categoría"></div>
+          <div id="categoryLegend" class="chart-legend"></div>
+        </article>
       </section>
 
       <section id="productos" class="panel">
@@ -33,7 +44,7 @@
           <label>Nombre<input name="name" maxlength="120" required /></label>
           <label>Marca<input name="brand" maxlength="80" required /></label>
           <label>Categoría<select name="category_id" required></select></label>
-          <label>Precio (COP)<input name="price" type="number" min="0" step="1" required /></label>
+          <label>Precio (COP)<input name="price" type="number" min="1" step="1" required /></label>
           <label>Stock total (incluye reservado)<input name="stock" type="number" min="0" step="1" required /></label>
           <label>Socket<input name="socket" maxlength="40" /></label>
           <label>Icono<input name="icon" maxlength="20" value="📦" /></label>
@@ -63,7 +74,7 @@
       </section>
 
       <section id="pedidos" class="panel">
-        <div class="section-title"><h2>Pedidos recientes</h2><p>Los pedidos avanzan de Pendiente a Confirmado, Enviado y Entregado.</p></div>
+        <div class="section-title"><h2>Pedidos recientes</h2><p>Los pedidos avanzan de Pendiente a Confirmado y Enviado. La entrega se confirma junto con la recepción del efectivo.</p></div>
         <p id="orderMessage" class="feedback" aria-live="polite"></p>
         <div class="tabla-wrap"><table><thead><tr><th>Fecha</th><th>Cliente</th><th>Productos</th><th>Categoría</th><th>Total</th><th>Estado / acciones</th></tr></thead><tbody id="ordersTable"></tbody></table></div>
       </section>

@@ -51,7 +51,7 @@ def get_cart(
 def add_cart_item(
     data: CartItemAdd,
     user: Annotated[dict[str, object], Depends(get_current_user)],
-) -> dict[str, str]:
+) -> dict[str, object]:
     user_id = get_user_id(user)
     now = datetime.now(timezone.utc).isoformat()
 
@@ -81,11 +81,13 @@ def add_cart_item(
         if current is not None:
             quantity += current["quantity"]
 
-        if quantity > product["available"]:
+        if product["available"] < 1:
             raise HTTPException(
                 status_code=409,
-                detail=f"Stock insuficiente. Disponibles: {product['available']}.",
+                detail="El producto no tiene unidades disponibles.",
             )
+
+        accepted_quantity = min(quantity, product["available"])
 
         connection.execute(
             "INSERT OR IGNORE INTO carts (user_id, updated_at) VALUES (?, ?)",
@@ -98,24 +100,35 @@ def add_cart_item(
             ON CONFLICT(user_id, product_id)
             DO UPDATE SET quantity = excluded.quantity
             """,
-            (user_id, data.product_id, quantity),
+            (user_id, data.product_id, accepted_quantity),
         )
         connection.execute(
             "UPDATE carts SET updated_at = ? WHERE user_id = ?",
             (now, user_id),
         )
 
-    return {"message": "Producto agregado al carrito."}
+    adjusted = accepted_quantity < quantity
+    return {
+        "message": (
+            f"Cantidad ajustada a {accepted_quantity}, "
+            "el máximo disponible."
+            if adjusted
+            else "Producto agregado al carrito."
+        ),
+        "quantity": accepted_quantity,
+        "adjusted": adjusted,
+    }
 
 
 def update_cart_item(
     product_id: int,
     data: CartItemChange,
     user: Annotated[dict[str, object], Depends(get_current_user)],
-) -> dict[str, str]:
+) -> dict[str, object]:
     user_id = get_user_id(user)
 
     with database.get_connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
         product = connection.execute(
             """
             SELECT stock - reserved_stock AS available
@@ -128,19 +141,20 @@ def update_cart_item(
         if product is None:
             raise HTTPException(status_code=404, detail="Producto no encontrado.")
 
-        if data.quantity > product["available"]:
+        if product["available"] < 1:
             raise HTTPException(
                 status_code=409,
-                detail=f"Stock insuficiente. Disponibles: {product['available']}.",
+                detail="El producto no tiene unidades disponibles.",
             )
 
+        accepted_quantity = min(data.quantity, product["available"])
         cursor = connection.execute(
             """
             UPDATE cart_items
             SET quantity = ?
             WHERE user_id = ? AND product_id = ?
             """,
-            (data.quantity, user_id, product_id),
+            (accepted_quantity, user_id, product_id),
         )
 
         if cursor.rowcount == 0:
@@ -149,7 +163,17 @@ def update_cart_item(
                 detail="El producto no está en el carrito.",
             )
 
-    return {"message": "Cantidad actualizada."}
+    adjusted = accepted_quantity < data.quantity
+    return {
+        "message": (
+            f"Cantidad ajustada a {accepted_quantity}, "
+            "el máximo disponible."
+            if adjusted
+            else "Cantidad actualizada."
+        ),
+        "quantity": accepted_quantity,
+        "adjusted": adjusted,
+    }
 
 
 def remove_cart_item(

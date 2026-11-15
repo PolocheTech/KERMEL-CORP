@@ -35,6 +35,7 @@
             </div>
             <section id="cartPanel" class="shopping-content" role="tabpanel" aria-labelledby="cartTab">
               <div id="cartContents"></div>
+              <p class="payment-note">Único medio de pago: efectivo contra entrega. El pago se confirma al recibir el producto.</p>
               <div class="cart-footer"><strong>Total <span id="cartTotal">$ 0</span></strong><button id="checkoutButton" type="button">Finalizar compra</button></div>
               <p id="cartMessage" class="store-message" aria-live="polite"></p>
             </section>
@@ -64,6 +65,7 @@
             <button id="filterToggle" class="filter-toggle" type="button" aria-expanded="false" aria-controls="filterPanel">Filtros <span aria-hidden="true">⌄</span></button>
             <div id="filterPanel" class="filter-panel" hidden>
               <label>Marca<select id="brandFilter" name="brand" aria-label="Filtrar por marca"><option value="">Todas las marcas</option></select></label>
+              <label>Socket<select id="socketFilter" name="socket" aria-label="Filtrar por socket"><option value="">Todos los sockets</option></select></label>
               <div class="price-filters"><label>Precio desde<input id="minPrice" name="min_price" type="number" min="0" placeholder="Mínimo" /></label><label>Hasta<input id="maxPrice" name="max_price" type="number" min="0" placeholder="Máximo" /></label></div>
               <div class="filter-actions"><button id="applyFilters" type="button">Aplicar</button><button id="clearFilters" type="button" class="text-button">Limpiar</button></div>
             </div>
@@ -72,6 +74,11 @@
         </div>
         <p id="storeMessage" class="store-message" aria-live="polite"></p>
         <div id="products" class="product-grid" aria-live="polite"></div>
+        <nav class="pagination-controls" aria-label="Paginación del catálogo">
+          <button id="previousPage" type="button" disabled>Anterior</button>
+          <span id="pageInfo" aria-live="polite">Página 1 de 1</span>
+          <button id="nextPage" type="button" disabled>Siguiente</button>
+        </nav>
       </section>
     </main>
     <script src="controller/api-config.js?v=4"></script>

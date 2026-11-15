@@ -49,20 +49,7 @@ el script crea el entorno e instala las dependencias que falten.
 
 ## Iniciar la aplicación
 
-### Linux: inicio automático
 
-Desde la raíz del proyecto, ejecuta:
-
-```bash
-chmod +x start.sh
-./start.sh
-```
-
-El script crea `.venv` si no existe, instala las dependencias del backend si
-hacen falta e inicia la API y el frontend. Abre <http://127.0.0.1:5500> en el
-navegador. La API y su documentación están en <http://127.0.0.1:8000> y
-<http://127.0.0.1:8000/docs>. Pulsa `Ctrl+C` en la terminal para detener ambos
-servicios.
 
 ### Inicio manual
 

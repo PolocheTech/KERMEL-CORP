@@ -13,14 +13,14 @@
   })[character]);
   const nextStatus = {
     Pendiente: "Confirmado",
-    Confirmado: "Enviado",
-    Enviado: "Entregado"
+    Confirmado: "Enviado"
   };
   let products = [];
   let categories = [];
   let orders = [];
   let latestOrderId = 0;
   let polling = false;
+  let pollingPaused = false;
 
   function feedback(id, message, type = "") {
     const element = byId(id);
@@ -100,6 +100,46 @@
         `<div class="category-stock"><span>${escapeHtml(category.categoria)}</span><strong>${category.unidades}</strong></div>`
       ).join("")
       : '<p class="empty-state">No hay existencias registradas.</p>';
+
+    const stockCategories = summary.stock_por_categoria || [];
+    const maxStock = Math.max(
+      1,
+      ...stockCategories.map((category) => Number(category.unidades) || 0),
+    );
+    byId("stockChart").innerHTML = stockCategories.length
+      ? stockCategories.map((category) => {
+        const units = Math.max(0, Number(category.unidades) || 0);
+        const width = Math.min(100, (units / maxStock) * 100);
+        return `<div class="bar-chart-row">
+          <span>${escapeHtml(category.categoria)}</span>
+          <div class="bar-chart-track"><span style="width:${width}%"></span></div>
+          <strong>${units}</strong>
+        </div>`;
+      }).join("")
+      : '<p class="empty-state">No hay datos para graficar.</p>';
+
+    const productCategories = summary.productos_por_categoria || [];
+    const totalProducts = productCategories.reduce(
+      (total, category) => total + (Number(category.productos) || 0),
+      0,
+    );
+    let accumulated = 0;
+    const segments = productCategories.map((category, index) => {
+      const count = Number(category.productos) || 0;
+      const start = accumulated;
+      accumulated += totalProducts ? (count / totalProducts) * 100 : 0;
+      return `hsl(${(index * 67) % 360} 62% 48%) ${start}% ${accumulated}%`;
+    });
+    byId("categoryChart").style.background = segments.length
+      ? `conic-gradient(${segments.join(", ")})`
+      : "conic-gradient(var(--linea) 0% 100%)";
+    byId("categoryLegend").innerHTML = productCategories.length
+      ? productCategories.map((category, index) => `
+        <span><i style="background:hsl(${(index * 67) % 360} 62% 48%)"></i>
+          ${escapeHtml(category.categoria)}: ${Number(category.productos) || 0}
+        </span>
+      `).join("")
+      : '<p class="empty-state">No hay productos para graficar.</p>';
   }
 
   function renderProducts() {
@@ -135,9 +175,12 @@
         <td>${new Date(order.fecha).toLocaleString("es-CO")}</td>
         <td>${escapeHtml(order.cliente)}</td><td>${escapeHtml(order.producto)}</td>
         <td>${escapeHtml(order.categoria)}</td><td>${currency(order.total)}</td>
-        <td><span class="order-state">${escapeHtml(order.estado)}</span><div class="action-cell">
+        <td><span class="order-state">${escapeHtml(order.estado)}</span>
+          <div class="order-payment">Pago: ${escapeHtml(order.payment_status || "no_registrado")}</div>
+          <div class="action-cell">
           <button type="button" data-order-details="${order.id}">Detalle</button>
           ${advance ? `<button type="button" data-advance-order="${order.id}" data-next-status="${advance}">Marcar ${advance}</button>` : ""}
+          ${order.estado === "Enviado" && order.payment_status === "pendiente" ? `<button type="button" data-deliver-order="${order.id}">Confirmar entrega y efectivo</button>` : ""}
           ${order.estado === "Pendiente" ? `<button type="button" class="danger-button" data-cancel-order="${order.id}">Cancelar</button>` : ""}
         </div></td>
       </tr>`;
@@ -173,6 +216,9 @@
           <div><dt>Cliente</dt><dd>${escapeHtml(order.cliente)}</dd></div>
           <div><dt>Fecha</dt><dd>${new Date(order.fecha).toLocaleString("es-CO")}</dd></div>
           <div><dt>Estado</dt><dd>${escapeHtml(order.estado)}</dd></div>
+          <div><dt>Método de pago</dt><dd>${escapeHtml(order.payment_method || "No registrado")}</dd></div>
+          <div><dt>Estado del pago</dt><dd>${escapeHtml(order.payment_status || "no_registrado")}</dd></div>
+          ${order.paid_at ? `<div><dt>Pago confirmado</dt><dd>${new Date(order.paid_at).toLocaleString("es-CO")}</dd></div>` : ""}
           <div><dt>Total</dt><dd>${currency(order.total)}</dd></div>
         </dl>
         <div class="tabla-wrap"><table>
@@ -323,12 +369,39 @@
   }
 
   async function cancelOrder(orderId) {
+    if (!window.confirm(`¿Deseas cancelar el pedido #${orderId}?`)) return;
     try {
       const updated = await api.request(`/pedidos/${orderId}/cancelar`, { method: "POST" });
       orders = orders.map(order => order.id === updated.id ? updated : order);
       renderOrders();
       feedback("orderMessage", `Pedido #${orderId} cancelado.`, "success");
       await loadInventory();
+    } catch (error) {
+      feedback("orderMessage", error.message, "error");
+    }
+  }
+
+  async function confirmDeliveryAndCash(orderId) {
+    if (
+      !window.confirm(
+        `Confirma que recibiste el efectivo y entregaste el pedido #${orderId}.`,
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const updated = await api.request(
+        `/pedidos/${orderId}/entregar-y-cobrar`,
+        { method: "POST" },
+      );
+      orders = orders.map((order) => order.id === updated.id ? updated : order);
+      renderOrders();
+      feedback(
+        "orderMessage",
+        `Pedido #${orderId}: entrega y pago confirmados.`,
+        "success",
+      );
     } catch (error) {
       feedback("orderMessage", error.message, "error");
     }
@@ -350,6 +423,20 @@
   byId("cancelProductEdit").addEventListener("click", resetProductForm);
   byId("cancelCategoryEdit").addEventListener("click", resetCategoryForm);
   byId("refreshButton").addEventListener("click", () => refreshAll().catch(error => connection("error", error.message)));
+  byId("togglePolling").addEventListener("click", (event) => {
+    pollingPaused = !pollingPaused;
+    event.currentTarget.setAttribute("aria-pressed", String(pollingPaused));
+    event.currentTarget.textContent = pollingPaused
+      ? "Reanudar actualizaciones"
+      : "Pausar actualizaciones";
+  });
+  byId("toggleTheme").addEventListener("click", (event) => {
+    const dark = document.body.classList.toggle("oscuro");
+    event.currentTarget.setAttribute("aria-pressed", String(dark));
+    event.currentTarget.textContent = dark
+      ? "Activar modo claro"
+      : "Activar modo oscuro";
+  });
   byId("btnCerrarSesion").addEventListener("click", logout);
   byId("productsTable").addEventListener("click", event => {
     const edit = event.target.closest("[data-edit-product]");
@@ -375,9 +462,11 @@
     const details = event.target.closest("[data-order-details]");
     const advance = event.target.closest("[data-advance-order]");
     const cancel = event.target.closest("[data-cancel-order]");
+    const deliver = event.target.closest("[data-deliver-order]");
     if (details) showOrderDetails(details.dataset.orderDetails);
     if (advance) changeOrderStatus(advance.dataset.advanceOrder, advance.dataset.nextStatus);
     if (cancel) cancelOrder(cancel.dataset.cancelOrder);
+    if (deliver) confirmDeliveryAndCash(deliver.dataset.deliverOrder);
   });
   document.querySelectorAll("aside a").forEach(link => link.addEventListener("click", () => {
     document.querySelectorAll("aside a").forEach(item => item.classList.remove("activo"));
@@ -392,7 +481,9 @@
         return;
       }
       await refreshAll();
-      window.setInterval(pollOrders, 5000);
+      window.setInterval(() => {
+        if (!pollingPaused) pollOrders();
+      }, 5000);
     } catch (error) {
       if (error.status === 401) window.location.replace("index.html");
       else connection("error", error.message);

@@ -27,6 +27,7 @@ Linux/macOS o `.venv\Scripts\python.exe` en Windows.
 - Documentación: <http://127.0.0.1:8000/docs>
 - Comprobación: `GET /api/health`
 - Catálogo: `GET /api/products`
+- Filtros del catálogo: `GET /api/products/filters`
 
 ## Datos
 
@@ -37,6 +38,11 @@ necesitas conservar los datos.
 En el primer inicio, el catálogo se importa desde `backend/data/products.json`.
 La importación ocurre una sola vez; después SQLite es la fuente de verdad y el
 JSON sirve como respaldo de los datos iniciales.
+
+El catálogo público se pagina con `page` (inicia en 1) y `page_size` (máximo
+100). La respuesta incluye `items`, `page`, `page_size`, `total` y
+`total_pages`. Los filtros disponibles son categoría, marca, precio, nombre y
+socket.
 
 ## Pruebas
 

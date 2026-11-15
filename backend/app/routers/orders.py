@@ -5,7 +5,7 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app import database
-from app.schemas import OrderStatusChange
+from app.schemas import CreateOrderRequest, OrderStatusChange
 from app.security import get_current_admin, get_current_user
 
 
@@ -14,7 +14,6 @@ router = APIRouter(prefix="/api/pedidos", tags=["pedidos"])
 NEXT_STATUS = {
     "Pendiente": "Confirmado",
     "Confirmado": "Enviado",
-    "Enviado": "Entregado",
 }
 
 
@@ -27,6 +26,9 @@ def serialize_order(order: sqlite3.Row) -> dict[str, object]:
         "categoria": order["categoria"],
         "total": order["total"],
         "estado": order["estado"],
+        "payment_method": order["payment_method"],
+        "payment_status": order["payment_status"],
+        "paid_at": order["paid_at"],
     }
 
 
@@ -76,6 +78,7 @@ def orders_since(
 
 
 def create_order(
+    data: CreateOrderRequest,
     user: Annotated[dict[str, object], Depends(get_current_user)],
 ) -> dict[str, object]:
     user_id = int(user["id"])
@@ -117,9 +120,10 @@ def create_order(
             """
             INSERT INTO orders (
                 created_by, cliente, producto, categoria,
-                total, estado, created_at
+                total, estado, created_at,
+                payment_method, payment_status
             )
-            VALUES (?, ?, ?, ?, ?, 'Pendiente', ?)
+            VALUES (?, ?, ?, ?, ?, 'Pendiente', ?, ?, 'pendiente')
             """,
             (
                 user_id,
@@ -128,6 +132,7 @@ def create_order(
                 categories,
                 total,
                 now,
+                data.payment_method,
             ),
         )
         order_id = cursor.lastrowid
@@ -244,10 +249,26 @@ def update_order_status(
         if order is None:
             raise HTTPException(status_code=404, detail="Pedido no encontrado.")
 
-        if data.estado != NEXT_STATUS.get(order["estado"]):
+        is_legacy_delivery = (
+            order["estado"] == "Enviado"
+            and data.estado == "Entregado"
+            and order["payment_method"] is None
+            and order["payment_status"] == "no_registrado"
+        )
+        if (
+            data.estado != NEXT_STATUS.get(order["estado"])
+            and not is_legacy_delivery
+        ):
+            detail = (
+                "Confirma la recepción del efectivo y la entrega mediante "
+                "la acción de entrega y cobro."
+                if order["estado"] == "Enviado"
+                and data.estado == "Entregado"
+                else f"Transición no permitida desde {order['estado']}."
+            )
             raise HTTPException(
                 status_code=409,
-                detail=f"Transición no permitida desde {order['estado']}.",
+                detail=detail,
             )
 
         if order["estado"] == "Pendiente":
@@ -305,6 +326,76 @@ def update_order_status(
                 order["created_by"],
                 order_id,
                 f"El estado de tu pedido cambió a {data.estado}.",
+                now,
+            ),
+        )
+        updated = connection.execute(
+            "SELECT * FROM orders WHERE id = ?",
+            (order_id,),
+        ).fetchone()
+
+    return serialize_order(updated)
+
+
+def confirm_delivery_and_cash(
+    order_id: int,
+    admin: Annotated[dict[str, object], Depends(get_current_admin)],
+) -> dict[str, object]:
+    now = datetime.now(timezone.utc).isoformat()
+
+    with database.get_connection() as connection:
+        connection.execute("BEGIN IMMEDIATE")
+        order = connection.execute(
+            "SELECT * FROM orders WHERE id = ?",
+            (order_id,),
+        ).fetchone()
+
+        if order is None:
+            raise HTTPException(status_code=404, detail="Pedido no encontrado.")
+
+        if order["estado"] == "Entregado" and order["payment_status"] == "pagado":
+            return serialize_order(order)
+
+        if order["estado"] != "Enviado":
+            raise HTTPException(
+                status_code=409,
+                detail="Solo se puede confirmar la entrega de un pedido enviado.",
+            )
+
+        if order["payment_method"] != "efectivo_contra_entrega":
+            raise HTTPException(
+                status_code=409,
+                detail="El pedido no está registrado como efectivo contra entrega.",
+            )
+
+        if order["payment_status"] != "pendiente":
+            raise HTTPException(
+                status_code=409,
+                detail="El pago no está pendiente de confirmación.",
+            )
+
+        connection.execute(
+            """
+            UPDATE orders
+            SET estado = 'Entregado',
+                payment_status = 'pagado',
+                paid_at = ?
+            WHERE id = ? AND estado = 'Enviado'
+                AND payment_status = 'pendiente'
+            """,
+            (now, order_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO notifications (
+                user_id, order_id, message, created_at
+            )
+            VALUES (?, ?, ?, ?)
+            """,
+            (
+                order["created_by"],
+                order_id,
+                "Tu pedido fue entregado y el pago en efectivo fue confirmado.",
                 now,
             ),
         )
@@ -415,4 +506,9 @@ router.add_api_route(
 router.add_api_route("/notificaciones", my_notifications, methods=["GET"])
 router.add_api_route("/{order_id}", get_order, methods=["GET"])
 router.add_api_route("/{order_id}/estado", update_order_status, methods=["PATCH"])
+router.add_api_route(
+    "/{order_id}/entregar-y-cobrar",
+    confirm_delivery_and_cash,
+    methods=["POST"],
+)
 router.add_api_route("/{order_id}/cancelar", cancel_order, methods=["POST"])

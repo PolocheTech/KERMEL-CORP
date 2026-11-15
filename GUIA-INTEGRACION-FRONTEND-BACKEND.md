@@ -84,11 +84,15 @@ ocultar una página o un botón nunca sustituye esa autorización.
 | Inventario | Totales, valor, productos agotados y unidades disponibles por categoría | `GET /api/admin/dashboard/inventory` |
 | Productos | Listar, buscar, crear, editar y desactivar | `GET /api/products/admin`, `POST /api/products`, `PUT /api/products/{id}`, `DELETE /api/products/{id}` |
 | Categorías | Listar, crear y editar | `GET /api/categories`, `POST /api/categories`, `PUT /api/categories/{id}` |
-| Pedidos | Ver recientes, consultar detalle, actualizar estado, cancelar y recibir pedidos nuevos | `GET /api/pedidos/recientes`, `GET /api/pedidos/{id}`, `PATCH /api/pedidos/{id}/estado`, `POST /api/pedidos/{id}/cancelar`, `GET /api/pedidos?since=...` |
+| Pedidos | Ver recientes, consultar detalle, actualizar estado, cancelar, confirmar entrega/cobro y recibir pedidos nuevos | `GET /api/pedidos/recientes`, `GET /api/pedidos/{id}`, `PATCH /api/pedidos/{id}/estado`, `POST /api/pedidos/{id}/cancelar`, `POST /api/pedidos/{id}/entregar-y-cobrar`, `GET /api/pedidos?since=...` |
 
 Las rutas de consulta pública del catálogo son `GET /api/products`,
-`GET /api/products/{id}` y `GET /api/categories`. El resto de escrituras de
-productos y categorías requiere una sesión de administrador.
+`GET /api/products/filters`, `GET /api/products/{id}` y
+`GET /api/categories`. `GET /api/products` admite `page` (1 por defecto),
+`page_size` (20 por defecto, máximo 100), `category_id`, `brand`, `min_price`,
+`max_price`, `search` y `socket`. Su respuesta contiene `items`, `page`,
+`page_size`, `total` y `total_pages`. El resto de escrituras de productos y
+categorías requiere una sesión de administrador.
 
 ### Crear o editar productos
 
@@ -112,10 +116,17 @@ frontend envía un JSON similar a:
 ```
 
 El backend valida el nombre (hasta 120 caracteres), marca (hasta 80), categoría
-existente, precio y stock como enteros no negativos, socket (hasta 40), icono
+existente, precio como entero mayor que cero y stock como entero no negativo, socket (hasta 40), icono
 (hasta 20) y especificaciones como lista. En una actualización, el stock total
 no puede ser menor que las unidades reservadas en pedidos pendientes; la API
 responde `409` si se intenta hacer ese cambio.
+
+Los pedidos se crean como `Pendiente` con el método `efectivo_contra_entrega`
+y el pago `pendiente`. Al confirmar el pedido, el inventario se descuenta; al
+marcarlo como enviado, el administrador puede confirmar entrega y cobro con
+`POST /api/pedidos/{id}/entregar-y-cobrar`. Esa acción registra el pago como
+`pagado` y el pedido como `Entregado` en una única transacción. No se debe usar
+esa acción hasta haber recibido físicamente el efectivo y entregado el pedido.
 
 El listado administrativo devuelve:
 

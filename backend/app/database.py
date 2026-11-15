@@ -6,14 +6,16 @@ DATABASE_PATH = Path(__file__).resolve().parent.parent / "data" / "kermel.db"
 
 
 class ConnectionContext:
-    def __init__(self) -> None:
+    def __init__(self, enforce_foreign_keys: bool = True) -> None:
         self.connection: sqlite3.Connection | None = None
+        self.enforce_foreign_keys = enforce_foreign_keys
 
     def __enter__(self) -> sqlite3.Connection:
         DATABASE_PATH.parent.mkdir(parents=True, exist_ok=True)
         connection = sqlite3.connect(DATABASE_PATH)
         connection.row_factory = sqlite3.Row
-        connection.execute("PRAGMA foreign_keys = ON")
+        if self.enforce_foreign_keys:
+            connection.execute("PRAGMA foreign_keys = ON")
         self.connection = connection
         return connection
 
@@ -29,8 +31,8 @@ class ConnectionContext:
         return False
 
 
-def get_connection() -> ConnectionContext:
-    return ConnectionContext()
+def get_connection(enforce_foreign_keys: bool = True) -> ConnectionContext:
+    return ConnectionContext(enforce_foreign_keys)
 
 
 def _get_columns(
@@ -71,6 +73,21 @@ def _migrate_order_statuses(connection: sqlite3.Connection) -> None:
     if "'Enviado'" in table_sql and "'Entregado'" in table_sql:
         return
 
+    columns = _get_columns(connection, "orders")
+    payment_method = (
+        "CASE WHEN payment_method = 'efectivo_contra_entrega' "
+        "THEN payment_method ELSE NULL END"
+        if "payment_method" in columns
+        else "NULL"
+    )
+    payment_status = (
+        "CASE WHEN payment_status IN ('pendiente', 'pagado', 'no_registrado') "
+        "THEN payment_status ELSE 'no_registrado' END"
+        if "payment_status" in columns
+        else "'no_registrado'"
+    )
+    paid_at = "paid_at" if "paid_at" in columns else "NULL"
+
     connection.execute(
         """
         CREATE TABLE orders_new (
@@ -86,7 +103,15 @@ def _migrate_order_statuses(connection: sqlite3.Connection) -> None:
                     'Entregado', 'Cancelado'
                 )
             ),
-            created_at TEXT NOT NULL
+            created_at TEXT NOT NULL,
+            payment_method TEXT CHECK (
+                payment_method IS NULL
+                OR payment_method = 'efectivo_contra_entrega'
+            ),
+            payment_status TEXT NOT NULL CHECK (
+                payment_status IN ('pendiente', 'pagado', 'no_registrado')
+            ),
+            paid_at TEXT
         )
         """
     )
@@ -95,7 +120,8 @@ def _migrate_order_statuses(connection: sqlite3.Connection) -> None:
         """
         INSERT INTO orders_new (
             id, created_by, cliente, producto, categoria,
-            total, estado, created_at
+            total, estado, created_at,
+            payment_method, payment_status, paid_at
         )
         SELECT
             id, created_by, cliente, producto, categoria, total,
@@ -103,9 +129,16 @@ def _migrate_order_statuses(connection: sqlite3.Connection) -> None:
                 WHEN 'Pagado' THEN 'Confirmado'
                 ELSE estado
             END,
-            created_at
+            created_at,
+            {payment_method},
+            {payment_status},
+            {paid_at}
         FROM orders
-        """
+        """.format(
+            payment_method=payment_method,
+            payment_status=payment_status,
+            paid_at=paid_at,
+        )
     )
 
     connection.execute("DROP TABLE orders")
@@ -113,7 +146,7 @@ def _migrate_order_statuses(connection: sqlite3.Connection) -> None:
 
 
 def initialize_database() -> None:
-    with get_connection() as connection:
+    with get_connection(enforce_foreign_keys=False) as connection:
         connection.execute(
             """
             CREATE TABLE IF NOT EXISTS users (
@@ -223,11 +256,37 @@ def initialize_database() -> None:
                         'Entregado', 'Cancelado'
                     )
                 ),
-                created_at TEXT NOT NULL
+                created_at TEXT NOT NULL,
+                payment_method TEXT CHECK (
+                    payment_method IS NULL
+                    OR payment_method = 'efectivo_contra_entrega'
+                ),
+                payment_status TEXT NOT NULL CHECK (
+                    payment_status IN ('pendiente', 'pagado', 'no_registrado')
+                ),
+                paid_at TEXT
             )
             """
         )
         _migrate_order_statuses(connection)
+        _add_column(
+            connection,
+            "orders",
+            "payment_method",
+            "TEXT CHECK (payment_method IS NULL OR payment_method = 'efectivo_contra_entrega')",
+        )
+        _add_column(
+            connection,
+            "orders",
+            "payment_status",
+            "TEXT NOT NULL DEFAULT 'no_registrado' CHECK (payment_status IN ('pendiente', 'pagado', 'no_registrado'))",
+        )
+        _add_column(
+            connection,
+            "orders",
+            "paid_at",
+            "TEXT",
+        )
 
         connection.execute(
             """
@@ -292,6 +351,14 @@ def initialize_database() -> None:
             "ON products(category_id)"
         )
         connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_products_active_brand "
+            "ON products(is_active, brand)"
+        )
+        connection.execute(
+            "CREATE INDEX IF NOT EXISTS idx_products_active_socket "
+            "ON products(is_active, socket)"
+        )
+        connection.execute(
             "CREATE INDEX IF NOT EXISTS idx_orders_user "
             "ON orders(created_by, id)"
         )
@@ -299,3 +366,9 @@ def initialize_database() -> None:
             "CREATE INDEX IF NOT EXISTS idx_orders_status "
             "ON orders(estado)"
         )
+
+        violations = connection.execute("PRAGMA foreign_key_check").fetchall()
+        if violations:
+            raise sqlite3.IntegrityError(
+                "La migración detectó referencias de base de datos inválidas."
+            )

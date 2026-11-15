@@ -231,6 +231,82 @@ button:hover {
   margin-bottom: 20px;
 }
 
+.dashboard-charts {
+  display: grid;
+  grid-template-columns: minmax(0, 1.5fr) minmax(220px, 1fr);
+  gap: 16px;
+  margin-bottom: 20px;
+}
+
+.bar-chart {
+  display: grid;
+  gap: 10px;
+}
+
+.bar-chart-row {
+  display: grid;
+  grid-template-columns: minmax(90px, 1fr) minmax(90px, 2fr) auto;
+  align-items: center;
+  gap: 10px;
+  font-size: 13px;
+}
+
+.bar-chart-row > span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.bar-chart-track {
+  height: 12px;
+  overflow: hidden;
+  border-radius: 8px;
+  background: var(--linea);
+}
+
+.bar-chart-track span {
+  display: block;
+  height: 100%;
+  border-radius: inherit;
+  background: var(--acento);
+}
+
+.donut-chart {
+  width: min(220px, 100%);
+  aspect-ratio: 1;
+  margin: 8px auto 16px;
+  border: 1px solid var(--linea);
+  border-radius: 50%;
+  position: relative;
+}
+
+.donut-chart::after {
+  position: absolute;
+  inset: 25%;
+  border: 1px solid var(--linea);
+  border-radius: 50%;
+  background: var(--panel);
+  content: "";
+}
+
+.chart-legend {
+  display: grid;
+  gap: 6px;
+  font-size: 13px;
+}
+
+.chart-legend span {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.chart-legend i {
+  width: 12px;
+  height: 12px;
+  flex: 0 0 12px;
+  border-radius: 3px;
+}
+
 .panel {
   padding: 18px;
 }
@@ -298,6 +374,12 @@ tr.nuevo {
   background: rgba(216, 80, 77, 0.15);
 }
 
+.order-payment {
+  margin-top: 4px;
+  color: var(--suave);
+  font-size: 12px;
+}
+
 body.oscuro .e-pendiente {
   color: var(--acento2);
 }
@@ -359,6 +441,10 @@ body.oscuro .e-pendiente {
   }
 
   .graficos {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboard-charts {
     grid-template-columns: 1fr;
   }
 

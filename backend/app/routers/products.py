@@ -29,41 +29,94 @@ def serialize_product(product: sqlite3.Row) -> dict[str, object]:
 
 
 def list_products(
-    category_id: int | None = None,
+    category_id: int | None = Query(default=None, ge=1),
     brand: str | None = None,
     min_price: int | None = Query(default=None, ge=0),
     max_price: int | None = Query(default=None, ge=0),
     search: str | None = None,
-) -> list[dict[str, object]]:
-    sql = """
-        SELECT products.*, categories.name AS category
-        FROM products
-        LEFT JOIN categories ON categories.id = products.category_id
-        WHERE products.is_active = 1
-    """
+    socket: str | None = None,
+    page: int = Query(default=1, ge=1),
+    page_size: int = Query(default=20, ge=1, le=100),
+) -> dict[str, object]:
+    where = ["products.is_active = 1"]
     values: list[object] = []
 
     if category_id is not None:
-        sql += " AND products.category_id = ?"
+        where.append("products.category_id = ?")
         values.append(category_id)
     if brand:
-        sql += " AND products.brand = ?"
+        where.append("products.brand = ?")
         values.append(brand)
     if min_price is not None:
-        sql += " AND products.price >= ?"
+        where.append("products.price >= ?")
         values.append(min_price)
     if max_price is not None:
-        sql += " AND products.price <= ?"
+        where.append("products.price <= ?")
         values.append(max_price)
-    if search:
-        sql += " AND products.name LIKE ?"
+    if search and search.strip():
+        where.append("products.name LIKE ?")
         values.append(f"%{search.strip()}%")
+    if socket and socket.strip():
+        where.append("products.socket = ?")
+        values.append(socket.strip())
 
-    sql += " ORDER BY products.id"
+    where_sql = " AND ".join(where)
+    offset = (page - 1) * page_size
 
     with database.get_connection() as connection:
-        rows = connection.execute(sql, values).fetchall()
-    return [serialize_product(row) for row in rows]
+        total = connection.execute(
+            f"""
+            SELECT COUNT(*)
+            FROM products
+            WHERE {where_sql}
+            """,
+            values,
+        ).fetchone()[0]
+
+        rows = connection.execute(
+            f"""
+            SELECT products.*, categories.name AS category
+            FROM products
+            LEFT JOIN categories ON categories.id = products.category_id
+            WHERE {where_sql}
+            ORDER BY products.id
+            LIMIT ? OFFSET ?
+            """,
+            [*values, page_size, offset],
+        ).fetchall()
+
+    return {
+        "items": [serialize_product(row) for row in rows],
+        "page": page,
+        "page_size": page_size,
+        "total": total,
+        "total_pages": (total + page_size - 1) // page_size,
+    }
+
+
+def product_filters() -> dict[str, list[str]]:
+    with database.get_connection() as connection:
+        brands = connection.execute(
+            """
+            SELECT DISTINCT brand
+            FROM products
+            WHERE is_active = 1 AND trim(brand) <> ''
+            ORDER BY brand COLLATE NOCASE
+            """
+        ).fetchall()
+        sockets = connection.execute(
+            """
+            SELECT DISTINCT socket
+            FROM products
+            WHERE is_active = 1 AND socket IS NOT NULL AND trim(socket) <> ''
+            ORDER BY socket COLLATE NOCASE
+            """
+        ).fetchall()
+
+    return {
+        "brands": [row["brand"] for row in brands],
+        "sockets": [row["socket"] for row in sockets],
+    }
 
 
 def list_admin_products(
@@ -234,6 +287,7 @@ def delete_product(
 
 
 router.add_api_route("", list_products, methods=["GET"])
+router.add_api_route("/filters", product_filters, methods=["GET"])
 router.add_api_route("/admin", list_admin_products, methods=["GET"])
 router.add_api_route("/{product_id}", get_product, methods=["GET"])
 router.add_api_route(

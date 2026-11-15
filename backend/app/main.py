@@ -1,7 +1,8 @@
+import sqlite3
 from pathlib import Path
 import sys
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.openapi.docs import get_swagger_ui_html
 from fastapi.responses import HTMLResponse
@@ -11,6 +12,7 @@ if __package__ in (None, ""):
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 from app.config import ALLOWED_ORIGINS
+from app import database
 from app.database import initialize_database
 from app.products_store import initialize_products
 from app.routers.auth import router as auth_router
@@ -84,7 +86,15 @@ def api_info() -> dict[str, str]:
 
 
 def health_check() -> dict[str, str]:
-    return {"status": "ok"}
+    try:
+        with database.get_connection() as connection:
+            connection.execute("SELECT 1").fetchone()
+    except sqlite3.Error as error:
+        raise HTTPException(
+            status_code=503,
+            detail="La base de datos no está disponible.",
+        ) from error
+    return {"status": "ok", "database": "ok"}
 
 
 app.add_api_route(

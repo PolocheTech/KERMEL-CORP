@@ -48,14 +48,26 @@ def inventory_dashboard() -> dict[str, object]:
             ORDER BY categories.name
             """
         ).fetchall()
+        product_categories = connection.execute(
+            """
+            SELECT
+                categories.name AS categoria,
+                COUNT(products.id) AS productos
+            FROM products
+            JOIN categories ON categories.id = products.category_id
+            WHERE products.is_active = 1
+            GROUP BY categories.id
+            ORDER BY categories.name
+            """
+        ).fetchall()
 
     return {
         **dict(summary),
         "stock_por_categoria": [dict(row) for row in categories],
+        "productos_por_categoria": [dict(row) for row in product_categories],
     }
 
 
 router.add_api_route("/inventory", inventory_dashboard, methods=["GET"])
-
 
 
